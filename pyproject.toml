@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "eeprom-sign"
-version = "1.0.5"
+version = "1.0.6"
 description = "RSA-PSS sign, verify, and batch-flash Raspberry Pi HAT+ EEPROM binaries via I2CDriver"
 readme = "README.md"
 license = { text = "MIT" }

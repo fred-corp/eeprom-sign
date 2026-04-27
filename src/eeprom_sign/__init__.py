@@ -1143,6 +1143,8 @@ Examples:
             auto_detect     = args.auto_detect,
         )
 
+def cli():
+    main()
 
 if __name__ == '__main__':
     main()
