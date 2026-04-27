@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"   # triggers on v0.1.0, v1.2.3, etc.
+
+jobs:
+  # ── 1. Publish to PyPI ──────────────────────────────────────────────────
+  pypi:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi          # optional: gate on a GitHub environment approval
+    permissions:
+      id-token: write          # needed for trusted publishing (no API key required)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install hatch
+
+      - name: Build wheel and sdist
+        run: hatch build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Uses OIDC trusted publishing — no PyPI token needed in secrets.
+        # Set it up once at: https://pypi.org/manage/account/publishing/
+
+  # ── 2. Build standalone macOS binary with PyInstaller ──────────────────
+  macos-binary:
+    name: Build macOS binary
+    runs-on: macos-latest
+    needs: pypi                # only build if PyPI publish succeeded
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install cryptography i2cdriver pyinstaller
+
+      - name: Build binary
+        run: |
+          pyinstaller \
+            --onefile \
+            --name eeprom-sign \
+            --strip \
+            src/eeprom_sign/__init__.py
+
+      - name: Smoke test
+        run: ./dist/eeprom-sign --help
+
+      - name: Compute SHA-256
+        run: |
+          shasum -a 256 dist/eeprom-sign | tee dist/eeprom-sign.sha256
+          echo "SHA256=$(awk '{print $1}' dist/eeprom-sign.sha256)" >> $GITHUB_ENV
+
+      - name: Upload binary as release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/eeprom-sign
+            dist/eeprom-sign.sha256
+
+      - name: Notify homebrew-tap
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          repository: yourname/homebrew-tap   # ← change to your GitHub username
+          event-type: new-release
+          client-payload: |
+            {
+              "tool": "eeprom-sign",
+              "version": "${{ github.ref_name }}",
+              "owner": "${{ github.repository_owner }}"
+            }
