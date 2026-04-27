@@ -76,7 +76,7 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
-          repository: yourname/homebrew-tap   # ← change to your GitHub username
+          repository: fred-corp/homebrew-tap
           event-type: new-release
           client-payload: |
             {
