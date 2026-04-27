@@ -10,9 +10,9 @@ jobs:
   pypi:
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
-    environment: pypi          # optional: gate on a GitHub environment approval
+    environment: pypi
     permissions:
-      id-token: write          # needed for trusted publishing (no API key required)
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +20,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Check version matches tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          TOML=$(grep '^version' pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$TAG" != "$TOML" ]; then
+            echo "ERROR: tag $TAG does not match pyproject.toml version $TOML"
+            exit 1
+          fi
 
       - name: Install build tools
         run: pip install hatch
@@ -29,16 +38,23 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        # Uses OIDC trusted publishing — no PyPI token needed in secrets.
-        # Set it up once at: https://pypi.org/manage/account/publishing/
 
-  # ── 2. Build standalone macOS binary with PyInstaller ──────────────────
+  # ── 2. Build macOS binaries (arm64 + x86_64) ───────────────────────────
   macos-binary:
-    name: Build macOS binary
-    runs-on: macos-latest
-    needs: pypi                # only build if PyPI publish succeeded
+    name: Build macOS binary (${{ matrix.arch }})
+    needs: pypi
     permissions:
-      contents: write          # needed to upload assets to the GitHub release
+      contents: write
+
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runs-on: macos-14       # Apple Silicon runner
+          - arch: x86_64
+            runs-on: macos-13       # last Intel runner
+
+    runs-on: ${{ matrix.runs-on }}
 
     steps:
       - uses: actions/checkout@v4
@@ -48,37 +64,43 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          pip install cryptography i2cdriver pyinstaller
+        run: pip install cryptography i2cdriver pyinstaller
 
       - name: Build binary
         run: |
           pyinstaller \
             --onefile \
-            --name eeprom-sign \
+            --name eeprom-sign-macos-${{ matrix.arch }} \
             --strip \
             src/eeprom_sign/__init__.py
 
       - name: Smoke test
-        run: ./dist/eeprom-sign --help
+        run: ./dist/eeprom-sign-macos-${{ matrix.arch }} --help
 
       - name: Compute SHA-256
         run: |
-          shasum -a 256 dist/eeprom-sign | tee dist/eeprom-sign.sha256
-          echo "SHA256=$(awk '{print $1}' dist/eeprom-sign.sha256)" >> $GITHUB_ENV
+          shasum -a 256 dist/eeprom-sign-macos-${{ matrix.arch }} \
+            | tee dist/eeprom-sign-macos-${{ matrix.arch }}.sha256
 
       - name: Upload binary as release asset
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/eeprom-sign
-            dist/eeprom-sign.sha256
+            dist/eeprom-sign-macos-${{ matrix.arch }}
+            dist/eeprom-sign-macos-${{ matrix.arch }}.sha256
 
-      - name: Notify homebrew-tap
+  # ── 3. Notify homebrew-tap once both binaries are uploaded ─────────────
+  notify-tap:
+    name: Notify homebrew-tap
+    needs: macos-binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Dispatch to homebrew-tap
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
-          repository: fred-corp/homebrew-tap   # ← change to your GitHub username
+          repository: fred-corp/homebrew-tap
           event-type: new-release
           client-payload: |
             {
