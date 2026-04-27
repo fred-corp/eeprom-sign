@@ -8,7 +8,6 @@ on:
 jobs:
   # ── 1. Publish to PyPI ──────────────────────────────────────────────────
   pypi:
-    
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
     environment: pypi          # optional: gate on a GitHub environment approval
@@ -16,15 +15,6 @@ jobs:
       id-token: write          # needed for trusted publishing (no API key required)
 
     steps:
-      # - name: Check version matches tag
-      #   run: |
-      #     TAG="${GITHUB_REF_NAME#v}"   # strips leading "v" → 1.0.1
-      #     TOML=$(grep '^version' pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
-      #     if [ "$TAG" != "$TOML" ]; then
-      #       echo "ERROR: tag $TAG does not match pyproject.toml version $TOML"
-      #       exit 1
-      #     fi
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -47,6 +37,8 @@ jobs:
     name: Build macOS binary
     runs-on: macos-latest
     needs: pypi                # only build if PyPI publish succeeded
+    permissions:
+      contents: write          # needed to upload assets to the GitHub release
 
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +78,7 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
-          repository: fred-corp/homebrew-tap
+          repository: yourname/homebrew-tap   # ← change to your GitHub username
           event-type: new-release
           client-payload: |
             {
