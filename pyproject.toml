@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eeprom-sign"
+version = "0.1.0"
+description = "RSA-PSS sign, verify, and batch-flash Raspberry Pi HAT+ EEPROM binaries via I2CDriver"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Fred Corp.", email = "contact@fredcorp.com" },
+]
+keywords = ["raspberry-pi", "hat", "eeprom", "i2c", "signing", "embedded"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Hardware",
+    "Topic :: Security :: Cryptography",
+]
+dependencies = [
+    "cryptography>=41.0",
+    "i2cdriver>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pyinstaller>=6",   # for building standalone binaries
+]
+
+[project.scripts]
+# This is what creates the `eeprom-sign` command after pip install
+eeprom-sign = "eeprom_sign:cli"
+
+[project.urls]
+Homepage = "https://github.com/fred-corp/eeprom-sign"
+Repository = "https://github.com/fred-corp/eeprom-sign"
+Issues = "https://github.com/fred-corp/eeprom-sign/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eeprom_sign"]
