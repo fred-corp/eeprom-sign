@@ -24,10 +24,23 @@ Supports single-device and production batch workflows via an
 
 ## Installation
 
+### Via homebrew (macOS ARM/Linux)
+
+```zsh
+brew tap fred-corp/tap
+brew install eeprom-sign
+```
+
+or
+
+```zsh
+brew install fred-corp/tap/eeprom-sign
+```
+
 ### Via `pip`
 
 ```zsh
-pip install eeprom_sign
+pip install eeprom-sign
 ```
 
 ## Requirements
@@ -57,7 +70,7 @@ Python 3.10 or later (uses `X | Y` union type hints).
 ### keygen - Generate an RSA key pair
 
 ```zsh
-python eeprom_sign.py keygen --private FILE --public FILE [--bits BITS]
+eeprom-sign keygen --private FILE --public FILE [--bits BITS]
 ```
 
 Generates a new RSA private/public key pair and writes both as PEM files.
@@ -75,7 +88,7 @@ to verify signatures.
 #### Example
 
 ```zsh
-python eeprom_sign.py keygen \
+eeprom-sign keygen \
     --private hat_private.pem \
     --public  hat_public.pem
 ```
@@ -85,7 +98,7 @@ python eeprom_sign.py keygen \
 ### sign - Sign a single EEPROM binary
 
 ```zsh
-python eeprom_sign.py sign INPUT --serial STRING --private FILE --output FILE
+eeprom-sign sign INPUT --serial STRING --private FILE --output FILE
 ```
 
 Takes an existing HAT+ EEPROM binary, embeds a serial number atom (SNUM),
@@ -107,7 +120,7 @@ so the operation is always idempotent.
 #### Example
 
 ```zsh
-python eeprom_sign.py sign eeprom_base.bin \
+eeprom-sign sign eeprom_base.bin \
     --serial  YOTA0001 \
     --private hat_private.pem \
     --output  eeprom_signed.bin
@@ -118,7 +131,7 @@ python eeprom_sign.py sign eeprom_base.bin \
 ### verify - Verify a signed EEPROM binary file
 
 ```zsh
-python eeprom_sign.py verify INPUT --public FILE
+eeprom-sign verify INPUT --public FILE
 ```
 
 Locates the RSIG atom in the binary, reconstructs the exact byte sequence
@@ -135,7 +148,7 @@ status and an error message if verification fails.
 #### Example
 
 ```zsh
-python eeprom_sign.py verify eeprom_signed.bin \
+eeprom-sign verify eeprom_signed.bin \
     --public hat_public.pem
 ```
 
@@ -144,7 +157,7 @@ python eeprom_sign.py verify eeprom_signed.bin \
 ### strip - Remove the signature atom
 
 ```zsh
-python eeprom_sign.py strip INPUT --output FILE
+eeprom-sign strip INPUT --output FILE
 ```
 
 Removes the RSIG atom and updates the EEPROM header (`numatoms`, `eeplen`)
@@ -160,7 +173,7 @@ so the result is a valid unsigned image ready for re-signing.
 #### Example
 
 ```zsh
-python eeprom_sign.py strip eeprom_signed.bin \
+eeprom-sign strip eeprom_signed.bin \
     --output eeprom_base.bin
 ```
 
@@ -169,7 +182,7 @@ python eeprom_sign.py strip eeprom_signed.bin \
 ### batch - Batch sign + flash loop
 
 ```zsh
-python eeprom_sign.py batch INPUT \
+eeprom-sign batch INPUT \
     --serial STRING --private FILE \
     [--public FILE] [--eeprom MODEL] [--port PORT] \
     [--output-dir DIR] [--no-verify] [--auto-detect]
@@ -211,7 +224,7 @@ are printed on exit.
 
 ```zsh
 # Manual mode (press Enter per board), save signed binaries
-python eeprom_sign.py batch eeprom_base.bin \
+eeprom-sign batch eeprom_base.bin \
     --serial     YOTA0001 \
     --private    hat_private.pem \
     --public     hat_public.pem \
@@ -220,7 +233,7 @@ python eeprom_sign.py batch eeprom_base.bin \
     --output-dir ./signed_images
 
 # Auto-detect mode, no file saving, no crypto re-verify
-python eeprom_sign.py batch eeprom_base.bin \
+eeprom-sign batch eeprom_base.bin \
     --serial    YOTA0001 \
     --private   hat_private.pem \
     --eeprom    24c256 \
@@ -234,7 +247,7 @@ python eeprom_sign.py batch eeprom_base.bin \
 ### readback - Read one EEPROM and verify its signature
 
 ```zsh
-python eeprom_sign.py readback \
+eeprom-sign readback \
     --public FILE [--eeprom MODEL] [--port PORT] [--output FILE]
 ```
 
@@ -257,7 +270,7 @@ so it is fast regardless of chip capacity.
 #### Examples
 
 ```zsh
-python eeprom_sign.py readback \
+eeprom-sign readback \
     --public hat_public.pem \
     --eeprom 24c256 \
     --port   /dev/tty.usbserial-DM02V7KY \
@@ -285,7 +298,7 @@ python eeprom_sign.py readback \
 ### batch-readback - Batch read + verify loop
 
 ```zsh
-python eeprom_sign.py batch-readback \
+eeprom-sign batch-readback \
     --public FILE [--eeprom MODEL] [--port PORT] \
     [--output-dir DIR] [--auto-detect]
 ```
@@ -307,13 +320,13 @@ but is read-only - useful for post-flash QC or incoming inspection.
 
 ```zsh
 # Manual mode
-python eeprom_sign.py batch-readback \
+eeprom-sign batch-readback \
     --public hat_public.pem \
     --eeprom 24c256 \
     --port   /dev/tty.usbserial-DM02V7KY
 
 # Auto-detect, save all readbacks
-python eeprom_sign.py batch-readback \
+eeprom-sign batch-readback \
     --public     hat_public.pem \
     --eeprom     24c256 \
     --port       /dev/tty.usbserial-DM02V7KY \
