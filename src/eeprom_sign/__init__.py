@@ -454,66 +454,6 @@ def sign_eeprom(input_path: Path, output_path: Path, private_key_path: Path, ser
 
 
 
-# ── Pre-sign batch ────────────────────────────────────────────────────────────
-
-def presign_eeproms(
-    input_path      : Path,
-    private_key_path: Path,
-    serial_start    : str,
-    serial_stop     : str,
-    output_dir      : Path,
-):
-    """
-    Sign a range of EEPROM images offline (no hardware needed).
-    Each image gets a unique UUID and an incremented serial number.
-    Output files are named <serial>.bin in output_dir.
-
-    --start and --stop are inclusive serial strings, e.g. BATCH0001 to BATCH0100.
-    Both must share the same prefix and digit width.
-    """
-    try:
-        prefix_a, digits_a, value_start = parse_serial(serial_start)
-        prefix_b, digits_b, value_stop  = parse_serial(serial_stop)
-    except ValueError as e:
-        sys.exit(f"[presign] ERROR: {e}")
-
-    if prefix_a != prefix_b or len(digits_a) != len(digits_b):
-        sys.exit(
-            f"[presign] ERROR: --start and --stop must share the same prefix "
-            f"and digit width (got '{serial_start}' and '{serial_stop}')."
-        )
-    if value_start > value_stop:
-        sys.exit(
-            f"[presign] ERROR: --start ({serial_start}) must be <= "
-            f"--stop ({serial_stop})."
-        )
-
-    digit_width = len(digits_a)
-    count       = value_stop - value_start + 1
-
-    # Load and normalise base image once
-    base_data = bytearray(input_path.read_bytes())
-    if has_sig_atom(base_data):
-        base_data = strip_atom(base_data, 0x0004, MAGIC)
-    base_data = strip_snum_atom(base_data)
-
-    private_key = load_private_key(private_key_path)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"[presign] Base image  : {input_path}  ({count_atoms(base_data)} atoms)")
-    print(f"[presign] Serial range: {serial_start} → {serial_stop}  ({count} images)")
-    print(f"[presign] Output dir  : {output_dir}")
-    print()
-
-    for i, value in enumerate(range(value_start, value_stop + 1)):
-        serial     = format_serial(prefix_a, digit_width, value)
-        out_path   = output_dir / f"{serial}.bin"
-        final_image = _sign_image(bytes(base_data), private_key, serial)
-        out_path.write_bytes(final_image)
-        print(f"  [{i+1:>{len(str(count))}}/{count}]  {serial}  →  {out_path.name}")
-
-    print()
-    print(f"[presign] Done — {count} signed image(s) in {output_dir}/")
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 
@@ -1011,22 +951,14 @@ Examples:
   # Generate a new 2048-bit key pair
   eeprom-sign keygen --private hat_private.pem --public hat_public.pem
 
-  # Pre-sign a range of images offline (no hardware needed)
-  eeprom-sign presign eeprom_base.bin \
-      --serial BATCH0001 --start BATCH0001 --stop BATCH0100 \
-      --private hat_private.pem --output-dir ./signed
-
-  # Sign a single EEPROM image (serial embedded manually)
-  eeprom-sign sign eeprom.bin --serial BATCH0001 \\
+  # Sign a single EEPROM image
+  eeprom-sign sign eeprom_base.bin --serial BATCH0001 \\
       --private hat_private.pem --output eeprom_signed.bin
 
-  # Pre-sign a range of images
-  eeprom-sign presign eeprom_base.bin \
-    --serial BATCH0001 \
-    --start  BATCH0001 \
-    --stop   BATCH0100 \
-    --private hat_private.pem \
-    --output-dir ./signed
+  # Pre-sign a batch of images
+  eeprom-sign sign eeprom_base.bin --serial BATCH0000 \\
+      --start 1 --stop 100 \\
+      --private hat_private.pem --output-dir ./signed
 
   # Verify a signed EEPROM image
   eeprom-sign verify eeprom_signed.bin --public hat_public.pem
@@ -1055,19 +987,19 @@ Examples:
 
   # Read back and verify a flashed EEPROM (saves a copy to readback.bin)
   eeprom-sign readback --public hat_public.pem \\
-      --eeprom 24c256 --port /dev/tty.usbserial-DM02V7KY --output readback.bin
+      --eeprom 24c256 --port /dev/tty.usbserial-I2CDRIVER --output readback.bin
 
   # Read back and verify without saving
   eeprom-sign readback --public hat_public.pem \\
-      --eeprom 24c256 --port /dev/tty.usbserial-DM02V7KY
+      --eeprom 24c256 --port /dev/tty.usbserial-I2CDRIVER
 
   # Batch readback: press Enter for each board
   eeprom-sign batch-readback --public hat_public.pem \\
-      --eeprom 24c256 --port /dev/tty.usbserial-DM02V7KY
+      --eeprom 24c256 --port /dev/tty.usbserial-I2CDRIVER
 
   # Batch readback: auto-trigger on board insertion
   eeprom-sign batch-readback --public hat_public.pem \\
-      --eeprom 24c256 --port /dev/tty.usbserial-DM02V7KY --auto-detect
+      --eeprom 24c256 --port /dev/tty.usbserial-I2CDRIVER --auto-detect
 """)
     sub = p.add_subparsers(dest='cmd', required=True)
 
@@ -1079,27 +1011,24 @@ Examples:
                     choices=[2048, 3072, 4096], metavar='BITS')
 
     # ── sign ──────────────────────────────────────────────────────────────
-    sg = sub.add_parser('sign', help='Sign a single EEPROM binary')
-    sg.add_argument('input',     type=Path)
-    sg.add_argument('--serial',  required=True,
-                    help='Serial number string to embed, e.g. BATCH0001')
-    sg.add_argument('--private', required=True, type=Path, metavar='FILE')
-    sg.add_argument('--output',  required=True, type=Path, metavar='FILE')
-
-    # ── presign ──────────────────────────────────────────────────────────────
-    ps = sub.add_parser('presign', help='Pre-sign a range of EEPROM images offline')
-    ps.add_argument('input',     type=Path,
+    sg = sub.add_parser('sign', help='Sign one or a range of EEPROM binaries')
+    sg.add_argument('input',        type=Path,
                     help='Base (unsigned) EEPROM .bin image')
-    ps.add_argument('--serial',  required=True, metavar='STRING',
-                    help='Serial number template, e.g. BATCH0001')
-    ps.add_argument('--start',   required=True, metavar='STRING',
-                    help='First serial to sign, e.g. BATCH0001')
-    ps.add_argument('--stop',    required=True, metavar='STRING',
-                    help='Last serial to sign (inclusive), e.g. BATCH0100')
-    ps.add_argument('--private', required=True, type=Path, metavar='FILE',
+    sg.add_argument('--serial',     required=True, metavar='STRING',
+                    help='Serial number string, e.g. BATCH0001. '
+                         'Used directly for single sign, or as the template '
+                         'prefix+width when --start/--stop are given.')
+    sg.add_argument('--private',    required=True, type=Path, metavar='FILE',
                     help='RSA private key PEM file')
-    ps.add_argument('--output-dir', required=True, type=Path, metavar='DIR',
-                    help='Directory to write signed .bin files into')
+    sg.add_argument('--output',     type=Path, default=None, metavar='FILE',
+                    help='Output path for signed binary (single sign only)')
+    sg.add_argument('--start',      type=int,  default=None, metavar='N',
+                    help='First serial number in batch (integer)')
+    sg.add_argument('--stop',       type=int,  default=None, metavar='N',
+                    help='Last serial number in batch (integer, inclusive)')
+    sg.add_argument('--output-dir', type=Path, default=None, metavar='DIR',
+                    help='Output directory for batch signing '
+                         '(default: current directory)')
 
     # ── verify ────────────────────────────────────────────────────────────
     vf = sub.add_parser('verify', help='Verify a signed EEPROM binary')
@@ -1195,16 +1124,48 @@ Examples:
         generate_keypair(args.private, args.public, args.bits)
 
     elif args.cmd == 'sign':
-        sign_eeprom(args.input, args.output, args.private, args.serial)
+        if args.start is not None or args.stop is not None:
+            # Batch mode
+            if args.start is None or args.stop is None:
+                p.error("sign: --start and --stop must both be provided for batch signing")
+            try:
+                prefix, digits_str, _ = parse_serial(args.serial)
+            except ValueError as e:
+                p.error(f"sign: {e}")
+            digit_width = len(digits_str)
+            if args.start > args.stop:
+                p.error(f"sign: --start ({args.start}) must be <= --stop ({args.stop})")
 
-    elif args.cmd == 'presign':
-        presign_eeproms(
-            input_path       = args.input,
-            private_key_path = args.private,
-            serial_start     = args.start,
-            serial_stop      = args.stop,
-            output_dir       = args.output_dir,
-        )
+            base_data = bytearray(args.input.read_bytes())
+            if has_sig_atom(base_data):
+                base_data = strip_atom(base_data, 0x0004, MAGIC)
+            base_data = strip_snum_atom(base_data)
+            private_key = load_private_key(args.private)
+            output_dir  = args.output_dir or Path('.')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            count = args.stop - args.start + 1
+
+            print(f"[sign] Base image  : {args.input}  ({count_atoms(base_data)} atoms)")
+            print(f"[sign] Serial range: "
+                  f"{format_serial(prefix, digit_width, args.start)} → "
+                  f"{format_serial(prefix, digit_width, args.stop)}  ({count} images)")
+            print(f"[sign] Output dir  : {output_dir}")
+            print()
+
+            for i, value in enumerate(range(args.start, args.stop + 1)):
+                serial     = format_serial(prefix, digit_width, value)
+                out_path   = output_dir / f"{serial}.bin"
+                final_image = _sign_image(bytes(base_data), private_key, serial)
+                out_path.write_bytes(final_image)
+                print(f"  [{i+1:>{len(str(count))}}/{count}]  {serial}  →  {out_path.name}")
+
+            print()
+            print(f"[sign] Done — {count} signed image(s) in {output_dir}/")
+        else:
+            # Single mode
+            if args.output is None:
+                p.error("sign: --output is required when not using --start/--stop")
+            sign_eeprom(args.input, args.output, args.private, args.serial)
 
     elif args.cmd == 'verify':
         verify_eeprom(args.input, args.public)
